@@ -3652,6 +3652,119 @@ a {
   list-style-type: none;
   padding: 0;
 }
+.cid-uscqXDTtlO .icon-bar {
+  z-index: 100002;
+  right: 0.4%;
+  position: fixed;
+  top: 50%;
+  font-weight: normal;
+  -webkit-transform: translateY(-50%);
+  -ms-transform: translateY(-50%);
+  transform: translateY(-50%);
+}
+.cid-uscqXDTtlO .icon-bar a:hover {
+  background-color: #162b75;
+  margin-left: -50px;
+  width: 100px;
+}
+.cid-uscqXDTtlO .icon-bar a {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  transition: all 0.3s ease;
+  color: white;
+  font-size: 20px;
+  font-weight: normal;
+  margin: 2px;
+  border-radius: 14px;
+}
+.cid-uscqXDTtlO .facebook {
+  background: #3B5998;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .twitter {
+  background: #55ACEE;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .google {
+  background: #dd4b39;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .linkedin {
+  background: #007bb5;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .youtube {
+  background: #bb0000;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .instagram {
+  background: #6F3AA7;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .custom1 {
+  background: #162b75;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .custom2 {
+  background: #0068ff;
+  color: white;
+  width: 50px;
+}
+.cid-uscqXDTtlO .content {
+  margin-left: 75px;
+  font-size: 30px;
+}
+.cid-uscqXDTtlO .corner-ribbon {
+  z-index: 20001;
+  width: 200px;
+  background-image: linear-gradient(#162b75, #162b75);
+  position: absolute;
+  top: 25px;
+  left: -50px;
+  text-align: center;
+  line-height: 50px;
+  letter-spacing: 1px;
+  transform: rotate(-45deg);
+  -webkit-transform: rotate(-45deg);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+}
+.cid-uscqXDTtlO .corner-ribbon ov:hover .effetover {
+  background-image: linear-gradient(#162b75, #162b75);
+}
+.cid-uscqXDTtlO .corner-ribbon.top-zen {
+  top: auto;
+  bottom: 25px;
+  left: -50px;
+  transform: rotate(45deg);
+  -webkit-transform: rotate(45deg);
+  position: fixed;
+}
+.cid-uscqXDTtlO P {
+  color: #232323;
+}
+.cid-uscqXDTtlO DIV {
+  color: #ffffff;
+}
+.cid-uscqXDTtlO H10 {
+  color: #767676;
+}
+.cid-uscqXDTtlO .hidden {
+  display: none;
+}
+.cid-uscqXDTtlO div.imgtest {
+  margin-left: auto;
+  margin-right: auto;
+  width: 100px;
+  content: url(https://www.unsitepourtous.be/logoscript/logo-zen.png);
+}
 .cid-us15pGy0eC {
   padding-top: 15px;
   padding-bottom: 15px;
