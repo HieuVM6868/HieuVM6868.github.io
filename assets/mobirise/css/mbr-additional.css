@@ -1160,6 +1160,59 @@ a {
 .cid-urZQzd00Qx .mbr-section-title {
   text-align: center;
 }
+.cid-uscjn3eeL4 {
+  padding-top: 3rem;
+  padding-bottom: 2rem;
+  background-image: url("../../../assets/images/1725645189-vinhomes-global-gate-co-loa-1280x721.webp");
+}
+.cid-uscjn3eeL4 .mbr-fallback-image.disabled {
+  display: none;
+}
+.cid-uscjn3eeL4 .mbr-fallback-image {
+  display: block;
+  background-size: cover;
+  background-position: center center;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+}
+.cid-uscjn3eeL4 .content-wrapper {
+  background: #fafafa;
+}
+@media (max-width: 991px) {
+  .cid-uscjn3eeL4 .content-wrapper .row {
+    flex-direction: column-reverse;
+  }
+  .cid-uscjn3eeL4 .content-wrapper .image-wrapper {
+    margin-bottom: 2rem;
+  }
+}
+@media (max-width: 767px) {
+  .cid-uscjn3eeL4 .content-wrapper {
+    padding: 1rem;
+  }
+}
+@media (min-width: 768px) and (max-width: 991px) {
+  .cid-uscjn3eeL4 .content-wrapper {
+    padding: 2rem;
+  }
+}
+@media (min-width: 992px) {
+  .cid-uscjn3eeL4 .content-wrapper {
+    padding: 5rem 3rem;
+  }
+  .cid-uscjn3eeL4 .content-wrapper .text-wrapper {
+    padding-right: 2rem;
+  }
+}
+.cid-uscjn3eeL4 .image-wrapper img {
+  width: 100%;
+  object-fit: cover;
+}
+.cid-uscjn3eeL4 .card-title {
+  color: #162b75;
+}
 .cid-urZRxBb1qW {
   padding-top: 6rem;
   padding-bottom: 6rem;
