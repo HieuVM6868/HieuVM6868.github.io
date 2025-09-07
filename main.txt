@@ -592,7 +592,7 @@ jobs:
             self.token_running[token_index] = True
             thread = threading.Thread(
                 target=self.process_single_token_cycle,
-                args=(token_index, 10),
+                args=(token_index, 3),
                 daemon=True,
                 name=f"Token-{token_index}-Thread"
             )
