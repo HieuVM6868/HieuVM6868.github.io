@@ -84,7 +84,7 @@ class GitHubVPSManager:
                 remaining = data['rate']['remaining']
                 reset_time = data['rate']['reset']
                 self.rate_limit_remaining[token] = (remaining, reset_time)
-                if remaining < 100:  # Giới hạn an toàn
+                if remaining < 100:  # Giới hạn an toànn
                     reset_time_dt = datetime.datetime.fromtimestamp(reset_time)
                     wait_seconds = (reset_time_dt - datetime.datetime.now()).total_seconds()
                     if wait_seconds > 0:
