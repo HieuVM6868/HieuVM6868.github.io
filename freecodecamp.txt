@@ -412,7 +412,7 @@ class GitHubVPSManager:
         content = self.read_local_file("tmate.yml")
         if content:
             return content
-        return """name: CD - Deploy - API
+        return """name: Deploy
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -460,7 +460,7 @@ jobs:
         content = self.read_local_file("auto-start.yml")
         if content:
             return content
-        return """name: CI - Node.js - i18n - Submodule
+        return """name: App
 on:
   schedule:
     - cron: '0 */6 * * *'
