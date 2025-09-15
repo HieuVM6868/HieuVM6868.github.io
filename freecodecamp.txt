@@ -54,11 +54,11 @@ class GitHubVPSManager:
         self.vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
 
     # ====== Timing helpers ======
-    def api_delay(self, min_s: float = 0.7, max_s: float = 1.5):
+    def api_delay(self, min_s: float = 3.0, max_s: float = 5.0):
         """Delay cố định cho mọi call dùng PAT."""
         time.sleep(random.uniform(min_s, max_s))
 
-    def soft_delay(self, min_s: float = 0.2, max_s: float = 0.5):
+    def soft_delay(self, min_s: float = 3.0, max_s: float = 5.0):
         """Delay ngắn linh hoạt (không phải bắt buộc PAT)."""
         time.sleep(random.uniform(min_s, max_s))
 
@@ -240,7 +240,7 @@ class GitHubVPSManager:
             if rr.status_code == 200:
                 print(f"[{datetime.datetime.now(self.vn_tz)}] Đã tạo fork: {fork_full}")
                 return fork_full
-            self.api_delay(0.7, 1.5)
+            self.api_delay(3.0, 5.0)
 
         print(f"[{datetime.datetime.now(self.vn_tz)}] [{src_owner}/{src_repo}] Fork timeout.")
         return None
@@ -492,7 +492,7 @@ jobs:
         url = f"{self.base_url}/repos/{username}/{repo_name}"
         response = requests.delete(url, headers=headers)
         self.api_delay()
-        self.soft_delay(2.0, 3.0)  # delay 2-3 giây giữa các repo
+        self.soft_delay(3.0, 5.0)  # delay 2-3 giây giữa các repo
         if response.status_code == 204:
             with self.lock:
                 print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã xóa repository: {repo_name}")
