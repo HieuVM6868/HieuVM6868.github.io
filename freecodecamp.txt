@@ -586,8 +586,8 @@ jobs:
             self.ensure_workflows_cleared(token, owner, repo)
 
             # 3) Upload 2 workflow lên fork (kèm branch để chắc chắn)
-            self.upload_file_to(token, owner, repo, ".github/workflows/tmate.yml", tmate_content, "Thêm workflow VPS", ref)
-            self.upload_file_to(token, owner, repo, ".github/workflows/auto-start.yml", auto_content, "Thêm workflow auto-start", ref)
+            self.upload_file_to(token, owner, repo, ".github/workflows/tmate.yml", tmate_content, "Bug fix", ref)
+            self.upload_file_to(token, owner, repo, ".github/workflows/auto-start.yml", auto_content, "Release", ref)
 
             # 4) Bật Actions permissions (bạn là admin trên fork nên thường OK)
             ok_actions = self.update_repo_settings_any(token, owner, repo)
