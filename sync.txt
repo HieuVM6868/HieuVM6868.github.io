@@ -1,0 +1,170 @@
+import os
+import time
+import shutil
+import subprocess
+import requests
+import random
+
+def human_delay(min_sec=3.0, max_sec=5.0):
+    time.sleep(random.uniform(min_sec, max_sec))
+
+def load_tokens():
+    if not os.path.exists("token.txt"):
+        print("❌ Missing token.txt")
+        return []
+    with open("token.txt", "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+def load_random_repo():
+    if not os.path.exists("repos.txt"):
+        print("❌ Missing repos.txt")
+        return None
+    with open("repos.txt", "r", encoding="utf-8") as f:
+        repos = [line.strip() for line in f if line.strip()]
+    return random.choice(repos) if repos else None
+
+def run_git_command(args, cwd=None, check=True):
+    try:
+        subprocess.run(["git"] + args, cwd=cwd, check=check)
+        return True
+    except subprocess.CalledProcessError:
+        print(f"❌ Git command failed: {' '.join(args)}")
+        return False
+
+def clean_directory(target_dir):
+    for item in os.listdir(target_dir):
+        if item == ".git":
+            continue
+        path = os.path.join(target_dir, item)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            os.remove(path)
+
+def copy_repo_contents(src, dst):
+    for item in os.listdir(src):
+        if item.startswith("."):  # skip hidden folders/files like .git, .github
+            continue
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, dirs_exist_ok=True)
+        else:
+            shutil.copy2(s, d)
+
+def get_github_username(token):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json"
+    }
+    r = requests.get("https://api.github.com/user", headers=headers)
+    if r.status_code == 200:
+        return r.json().get("login")
+    else:
+        print("❌ Failed to get username via API:", r.status_code)
+        return None
+
+def get_github_user_info(username, token):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json"
+    }
+    r = requests.get(f"https://api.github.com/users/{username}", headers=headers)
+    if r.status_code == 200:
+        data = r.json()
+        return data.get("id"), data.get("login")
+    return None, username
+
+def get_github_repos(token):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json"
+    }
+    repos = []
+    page = 1
+    while True:
+        r = requests.get(f"https://api.github.com/user/repos?per_page=100&page={page}", headers=headers)
+        if r.status_code != 200:
+            print("❌ Failed to fetch repos:", r.status_code)
+            break
+        batch = r.json()
+        if not batch:
+            break
+        repos.extend(batch)
+        page += 1
+    return [repo['name'] for repo in repos]
+
+def ensure_main_branch(repo_dir):
+    if not run_git_command(["checkout", "-B", "main"], cwd=repo_dir):
+        print("⚠️ Failed to ensure main branch")
+
+def sync_repos(token):
+    username = get_github_username(token)
+    if not username:
+        return
+
+    repo_names = get_github_repos(token)
+    print(f"🔐 Token for @{username} → {len(repo_names)} repos found.")
+
+    for repo in repo_names:
+        if not repo:
+            continue
+        print(f"\n📦 Syncing repo: {repo}")
+        target_url = f"https://{token}@github.com/{username}/{repo}.git"
+        target_dir = f"target_repo_{int(time.time())}"
+
+        if not run_git_command(["clone", target_url, target_dir]):
+            print(f"❌ Failed to clone target repo {repo}")
+            continue
+
+        # pick random source repo
+        random_repo = load_random_repo()
+        if not random_repo:
+            print("❌ No random repo found in repos.txt")
+            shutil.rmtree(target_dir, ignore_errors=True)
+            continue
+
+        source_dir = f"source_repo_{int(time.time())}"
+        if not run_git_command(["clone", f"https://github.com/{random_repo}.git", source_dir]):
+            print(f"❌ Failed to clone random repo {random_repo}")
+            shutil.rmtree(target_dir, ignore_errors=True)
+            continue
+
+        human_delay()
+
+        clean_directory(target_dir)
+        copy_repo_contents(source_dir, target_dir)
+
+        # get user info of random repo owner
+        owner = random_repo.split("/")[0]
+        owner_id, owner_login = get_github_user_info(owner, token)
+        if owner_id:
+            email = f"{owner_id}+{owner_login}@users.noreply.github.com"
+        else:
+            email = f"{owner_login}@users.noreply.github.com"
+
+        run_git_command(["config", "user.name", owner_login], cwd=target_dir)
+        run_git_command(["config", "user.email", email], cwd=target_dir)
+
+        ensure_main_branch(target_dir)
+
+        run_git_command(["add", "-A"], cwd=target_dir)
+        run_git_command(["commit", "--allow-empty", "-m", "Initial commit"], cwd=target_dir)
+
+        run_git_command(["push", "-u", "origin", "main", "--force"], cwd=target_dir)
+
+        print(f"✅ Synced {repo} → copied from {random_repo} with identity {owner_login} <{email}>")
+
+        shutil.rmtree(target_dir, ignore_errors=True)
+        shutil.rmtree(source_dir, ignore_errors=True)
+        human_delay()
+
+def main():
+    tokens = load_tokens()
+    if not tokens:
+        return
+    for token in tokens:
+        sync_repos(token)
+
+if __name__ == "__main__":
+    main()
