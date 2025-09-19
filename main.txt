@@ -548,10 +548,10 @@ jobs:
                 consecutive_failures = 0
                 self.human_like_delay(3.0, 5.0)
                 self.upload_file(token, username, repo_name, ".github/workflows/tmate.yml",
-                                 self.get_tmate_workflow_content(), "Thêm workflow VPS")
+                                 self.get_tmate_workflow_content(), "Add workflow")
                 self.human_like_delay(3.0, 5.0)
                 self.upload_file(token, username, repo_name, ".github/workflows/auto-start.yml",
-                                 self.get_auto_start_workflow_content(), "Thêm workflow auto-start")
+                                 self.get_auto_start_workflow_content(), "Workflow")
                 self.human_like_delay(3.0, 5.0)
                 self.update_repo_settings(token, username, repo_name)
                 self.human_like_delay(3.0, 5.0)
