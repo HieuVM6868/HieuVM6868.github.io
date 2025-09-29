@@ -671,7 +671,7 @@ jobs:
                     self.delete_all_repos_for_account(token, username, spread_over_seconds=0)
 
                 # Đợi đến 05:00
-                sys.exit(1)
+                sys.exit()
 
             # Tiến hành chu kỳ bình thường
             print(f"[{datetime.datetime.now(self.vn_tz)}] Bắt đầu chu kỳ mới...")
@@ -707,7 +707,7 @@ if __name__ == "__main__":
     # Kiểm tra và cài đặt pytz trước khi chạy
     if not ensure_pytz_installed():
         print("Không thể cài đặt pytz. Dừng chương trình.")
-        sys.exit(1)
+        sys.exit()
 
     manager = GitHubVPSManager()
     try:
