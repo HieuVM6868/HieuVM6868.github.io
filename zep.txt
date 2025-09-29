@@ -671,7 +671,7 @@ jobs:
                     self.delete_all_repos_for_account(token, username, spread_over_seconds=0)
 
                 # Đợi đến 05:00
-                sys.exit(1)
+                sys.exit(0)
 
             # Tiến hành chu kỳ bình thường
             print(f"[{datetime.datetime.now(self.vn_tz)}] Bắt đầu chu kỳ mới...")
