@@ -538,7 +538,7 @@ jobs:
 
         created_repos = []
         consecutive_failures = 0
-        repo_names = [f"react-{i}" for i in range(1, repo_count + 1)]
+        repo_names = [f"test-{i}" for i in range(1, repo_count + 1)]
         for i in range(1, repo_count + 1):
             if not self.token_running.get(token_index, False):
                 break
